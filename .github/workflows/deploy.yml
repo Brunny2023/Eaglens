@@ -1,0 +1,42 @@
+name: Deploy Eaglens Bot
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install python-telegram-bot requests pandas numpy scikit-learn scipy
+
+    - name: Run Bot (Example for a simple server)
+      # NOTE: For a real-world deployment, you would replace this step with a service like
+      # PM2, Docker, or a platform-specific deployment command (e.g., for Heroku or Render).
+      # This example shows how to run the bot with secrets injected.
+      run: |
+        echo "Starting Eaglens Bot..."
+        # The bot needs to run continuously, so this is a placeholder.
+        # In a real scenario, you would use a dedicated hosting service that supports
+        # long-running processes and inject these secrets as environment variables.
+        # Example: pm2 start bot.py --name eaglens
+        
+    - name: Deployment Instructions Placeholder
+      run: |
+        echo "Deployment successful (simulated). To run this continuously, you must use a hosting service."
+        echo "Ensure the following secrets are set in your GitHub repository settings:"
+        echo "1. TELEGRAM_TOKEN"
+        echo "2. FOOTBALL_DATA_API_KEY"
