@@ -1,8 +1,10 @@
 import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from config import TELEGRAM_TOKEN
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE
 from engine import EaglensEngine
+from database import check_user_access, verify_invite_code
+from payments import PaystackManager
 
 # Configure logging
 logging.basicConfig(
@@ -14,96 +16,156 @@ engine = EaglensEngine()
 
 DISCLAIMER_TEXT = (
     "🦅 *Welcome to Eaglens: Your Probabilistic Decision-Support System*\n\n"
-    "Eaglens is not a tipster or a betting bot. It is a high-precision analytical engine "
-    "designed to provide you with *calibrated, data-driven probabilities* for football match outcomes.\n\n"
+    "Eaglens is a high-precision analytical engine designed to provide you with "
+    "*calibrated, data-driven probabilities* for football match outcomes.\n\n"
     "🛡️ *Our Commitment to Accuracy:*\n"
-    "Unlike traditional predictors, Eaglens is *self-aware*. It continuously monitors its own "
-    "performance, data quality, and market volatility. If our internal confidence drops or "
-    "environmental conditions become too unpredictable, the system will *prefer silence* over "
-    "unreliable output.\n\n"
-    "📊 *How to Use Eaglens:*\n"
-    "1. **Probabilities**: We provide the mathematical likelihood of Home, Draw, and Away outcomes.\n"
-    "2. **Confidence**: Every prediction is paired with a Confidence Score (0-100). This reflects "
-    "the stability of the underlying data and model calibration.\n\n"
-    "By using Eaglens, you are accessing a cautious quantitative analyst that actively "
-    "discourages blind trust and prioritizes statistical integrity above all else.\n\n"
-    "*Ready to analyze? Use the menu below to get started.*"
+    "Eaglens is *self-aware*. It monitors its own performance and prefers silence over unreliable output.\n\n"
+    "💰 *Rain Dollars with Guided Predictions:*\n"
+    "Stop guessing and start winning. Our system is engineered to help you make "
+    "decisions that **rain dollars**. Let Eaglens guide your path to profitability today!\n\n"
+    "⚠️ *Access Restricted*: Eaglens is currently **Invite-Only**."
 )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /start command and show the disclaimer."""
+    """Handle the /start command and check access."""
+    user_id = update.effective_user.id
+    has_access, status = check_user_access(user_id)
+    
+    if status == "not_registered":
+        await update.message.reply_text(
+            DISCLAIMER_TEXT + "\n\n*Please enter your Invite Code to proceed:*",
+            parse_mode='Markdown'
+        )
+        context.user_data['awaiting_invite'] = True
+        return
+
+    if status in ["not_subscribed", "expired"]:
+        keyboard = [
+            [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
+            [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "🦅 *Subscription Required*\n\nTo access Eaglens predictions and start raining dollars, please select a plan:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        return
+
+    # Active user menu
     keyboard = [['🔍 Search Match', '📅 Today\'s Analysis'], ['📈 System Status', 'ℹ️ About Eaglens']]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
     await update.message.reply_text(
-        DISCLAIMER_TEXT,
-        parse_mode='Markdown',
-        reply_markup=reply_markup
+        "🦅 *Eaglens Active*\n\nReady to analyze? Use the menu below to get started.",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
-async def system_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show the current health of the analytical engine."""
-    metrics = engine.calibration_metrics
-    status_msg = (
-        "🦅 *Eaglens System Health Report*\n\n"
-        f"✅ **Calibration (Brier)**: {metrics['brier_score']:.3f} (Healthy)\n"
-        f"✅ **Data Stability (PSI)**: {metrics['data_drift_psi']:.2f} (Stable)\n"
-        f"✅ **League Volatility**: {metrics['league_volatility']:.2f} (Normal)\n"
-        f"✅ **Active Sample Size**: {metrics['sample_size']} matches\n\n"
-        "The engine is currently operating at full analytical capacity."
-    )
-    await update.message.reply_text(status_msg, parse_mode='Markdown')
-
-async def mock_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Provide a mock prediction for demonstration."""
-    # In a real scenario, this would fetch data from the API
-    prediction = engine.predict("Arsenal", "Chelsea", 1.8, 1.2)
+async def handle_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verify the invite code provided by the user."""
+    if not context.user_data.get('awaiting_invite'):
+        return await handle_menu(update, context)
     
-    if prediction["status"] == "success":
-        msg = (
-            f"🦅 *Match Analysis: {prediction['home_team']} vs {prediction['away_team']}*\n\n"
-            "**Probabilities:**\n"
-            f"🏠 Home: {prediction['probabilities']['home']:.1%}\n"
-            f"🤝 Draw: {prediction['probabilities']['draw']:.1%}\n"
-            f"🚀 Away: {prediction['probabilities']['away']:.1%}\n\n"
-            f"**Confidence Score: {prediction['confidence']}/100**\n"
-            f"Label: *{prediction['confidence_label']}*\n\n"
-            "_Note: This is a probabilistic assessment, not a guaranteed outcome._"
+    code = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if verify_invite_code(user_id, code):
+        context.user_data['awaiting_invite'] = False
+        await update.message.reply_text(
+            "✅ *Invite Verified!*\n\nWelcome to the elite circle. Now, choose your entry plan to start receiving predictions:",
+            parse_mode='Markdown'
+        )
+        # Show payment options
+        keyboard = [
+            [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
+            [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Select a plan:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("❌ *Invalid or used invite code.* Please try again or contact support.")
+
+async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle plan selection and initialize Paystack transaction."""
+    query = update.callback_query
+    await query.answer()
+    
+    plan = query.data.split('_')[1]
+    amount = PAYSTACK_TRIAL_PRICE if plan == 'trial' else PAYSTACK_MONTHLY_PRICE
+    user_id = query.from_user.id
+    email = f"user_{user_id}@eaglens.bot" # Placeholder email
+    
+    res = PaystackManager.initialize_transaction(email, amount, {"user_id": user_id, "plan": plan})
+    
+    if res.get('status'):
+        auth_url = res['data']['authorization_url']
+        ref = res['data']['reference']
+        
+        keyboard = [[InlineKeyboardButton("💳 Pay Now", url=auth_url)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"🦅 *Payment Initialized*\n\nPlan: {plan.capitalize()}\nAmount: ${amount}\n\n"
+            "Click the button below to complete your payment. Once done, use /verify to activate your account.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        context.user_data['last_ref'] = ref
+    else:
+        await query.edit_message_text("❌ Error initializing payment. Please try again later.")
+
+async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manually verify payment using the reference."""
+    ref = context.user_data.get('last_ref')
+    if not ref:
+        return await update.message.reply_text("No pending payment found. Use /start to subscribe.")
+    
+    res = PaystackManager.verify_transaction(ref)
+    if res.get('status') and res['data']['status'] == 'success':
+        user_id = update.effective_user.id
+        plan = res['data']['metadata']['plan']
+        expiry = PaystackManager.activate_subscription(user_id, plan)
+        
+        await update.message.reply_text(
+            f"🎉 *Payment Successful!*\n\nYour Eaglens access is now **Active** until {expiry[:10]}.\n"
+            "Use /start to open the main menu and start raining dollars! 💰",
+            parse_mode='Markdown'
         )
     else:
-        msg = f"⚠️ *No Reliable Prediction Available*\n\nReason: {prediction['reason']}"
-        
-    await update.message.reply_text(msg, parse_mode='Markdown')
+        await update.message.reply_text("⏳ Payment not yet verified. Please complete the payment or try again in a moment.")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle main menu interactions with access check."""
+    user_id = update.effective_user.id
+    has_access, _ = check_user_access(user_id)
+    
+    if not has_access:
+        return await start(update, context)
+
     text = update.message.text
-    if text == '🔍 Search Match' or text == '📅 Today\'s Analysis':
-        await mock_prediction(update, context)
+    if text in ['🔍 Search Match', '📅 Today\'s Analysis']:
+        prediction = engine.predict("Arsenal", "Chelsea", 1.8, 1.2)
+        msg = f"🦅 *Match Analysis: {prediction['home_team']} vs {prediction['away_team']}*\n\n" \
+              f"🏠 Home: {prediction['probabilities']['home']:.1%}\n" \
+              f"🤝 Draw: {prediction['probabilities']['draw']:.1%}\n" \
+              f"🚀 Away: {prediction['probabilities']['away']:.1%}\n\n" \
+              f"**Confidence: {prediction['confidence']}/100** ({prediction['confidence_label']})"
+        await update.message.reply_text(msg, parse_mode='Markdown')
     elif text == '📈 System Status':
-        await system_status(update, context)
+        metrics = engine.calibration_metrics
+        status_msg = f"🦅 *System Health*\n\n✅ Calibration: {metrics['brier_score']:.3f}\n✅ Stability: {metrics['data_drift_psi']:.2f}"
+        await update.message.reply_text(status_msg, parse_mode='Markdown')
     elif text == 'ℹ️ About Eaglens':
         await update.message.reply_text(
-            "🦅 *Welcome to the Future of Football Intelligence!*\n\n"
-            "Eaglens isn't just a bot; it's your ultimate edge in the world of football. "
-            "By combining elite statistical calibration with real-time signal processing, "
-            "we provide you with the **well-guided predictions** you need to dominate.\n\n"
-            "💰 *Turn Insights into Results:*\n"
-            "Stop guessing and start winning. Our system is engineered to help you make "
-            "decisions that **rain dollars**. Whether you're looking for the next big win "
-            "or consistent growth, Eaglens provides the mathematical clarity to get you there.\n\n"
-            "🚀 *Join the Elite:* Don't leave your success to chance. Let Eaglens guide your "
-            "path to profitability today!",
+            "🦅 *Eaglens: The Future of Football Intelligence*\n\n"
+            "We provide well-guided predictions that **rain dollars**. Let Eaglens guide your path to profitability!",
             parse_mode='Markdown'
         )
 
 if __name__ == '__main__':
-    if TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
-        print("Error: Please set your TELEGRAM_TOKEN in config.py or as an environment variable.")
-    else:
-        application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-        
-        application.add_handler(CommandHandler('start', start))
-        application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-        
-        print("Eaglens Bot is starting...")
-        application.run_polling()
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('verify', verify_payment))
+    application.add_handler(CallbackQueryHandler(handle_payment_callback, pattern='^pay_'))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_invite))
+    application.run_polling()
