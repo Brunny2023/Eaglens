@@ -27,3 +27,7 @@ PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "YOUR_PAYSTACK_SECRET_KEY
 PAYSTACK_TRIAL_PRICE = 7.99
 PAYSTACK_MONTHLY_PRICE = 349.00
 PAYSTACK_CURRENCY = "USD"
+
+# Owner Configuration
+OWNER_USERNAME = "@lordsgreat"
+OWNER_ID = 0  # Will be updated once the owner interacts with the bot

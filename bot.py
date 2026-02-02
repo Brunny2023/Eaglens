@@ -1,10 +1,11 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
-from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE
+from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
 from engine import EaglensEngine
 from database import check_user_access, verify_invite_code, init_db
 from payments import PaystackManager
+from invites import generate_invite_code, notify_owner_of_new_code
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,13 @@ DISCLAIMER_TEXT = (
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /start command and check access."""
     user_id = update.effective_user.id
+    username = update.effective_user.username
+    
+    # Update OWNER_ID if the owner interacts
+    if username and f"@{username}" == OWNER_USERNAME:
+        global OWNER_ID
+        OWNER_ID = user_id
+
     has_access, status = check_user_access(user_id)
     
     if status == "not_registered":
@@ -134,6 +142,25 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⏳ Payment not yet verified. Please complete the payment or try again in a moment.")
 
+async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner command to generate a new multi-use invite code."""
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    
+    if username and f"@{username}" == OWNER_USERNAME:
+        max_uses = 100
+        if context.args:
+            try:
+                max_uses = int(context.args[0])
+            except ValueError:
+                pass
+        
+        code = generate_invite_code(max_uses=max_uses)
+        await update.message.reply_text(f"✅ Generated code: `{code}` with {max_uses} uses.", parse_mode='Markdown')
+        await notify_owner_of_new_code(context, code, max_uses)
+    else:
+        await update.message.reply_text("❌ Unauthorized. Only the owner can generate codes.")
+
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle main menu interactions with access check."""
     user_id = update.effective_user.id
@@ -167,6 +194,7 @@ if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('verify', verify_payment))
+    application.add_handler(CommandHandler('gen_code', generate_code_command))
     application.add_handler(CallbackQueryHandler(handle_payment_callback, pattern='^pay_'))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_invite))
     application.run_polling()
