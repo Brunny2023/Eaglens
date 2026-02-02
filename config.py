@@ -19,7 +19,8 @@ CONFIDENCE_MEDIUM = (45, 69)
 CONFIDENCE_LOW = (0, 44)
 
 # Database Path
-DB_PATH = "/home/ubuntu/eaglens_bot/data/eaglens.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "eaglens.db")
 
 # Paystack Configuration
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "YOUR_PAYSTACK_SECRET_KEY")

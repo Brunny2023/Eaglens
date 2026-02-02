@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE
 from engine import EaglensEngine
-from database import check_user_access, verify_invite_code
+from database import check_user_access, verify_invite_code, init_db
 from payments import PaystackManager
 
 # Configure logging
@@ -163,6 +163,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 if __name__ == '__main__':
+    init_db()
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('verify', verify_payment))

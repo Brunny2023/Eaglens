@@ -2,7 +2,10 @@ import sqlite3
 from datetime import datetime, timedelta
 from config import DB_PATH
 
+import os
+
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
