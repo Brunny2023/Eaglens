@@ -189,9 +189,13 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-if __name__ == '__main__':
+async def post_init(application):
+    """Ensure database is ready and notify owner if possible."""
     init_db()
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    logging.info("Eaglens Bot initialized and database ready.")
+
+if __name__ == '__main__':
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('verify', verify_payment))
     application.add_handler(CommandHandler('gen_code', generate_code_command))
