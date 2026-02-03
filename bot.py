@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
 from engine import EaglensEngine
-from database import check_user_access, verify_invite_code, init_db
+from database import check_user_access, verify_invite_code, init_db, log_visitor, get_all_users
 from payments import PaystackManager
 from invites import generate_invite_code, notify_owner_of_new_code
 
@@ -32,6 +32,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
     
+    # Log visitor
+    log_visitor(user_id, username)
+
     # Update OWNER_ID if the owner interacts
     if username and f"@{username}" == OWNER_USERNAME:
         global OWNER_ID
@@ -39,7 +42,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     has_access, status = check_user_access(user_id)
     
-    if status == "not_registered":
+    if status in ["not_registered", "not_verified"]:
         await update.message.reply_text(
             DISCLAIMER_TEXT + "\n\n*Please enter your Invite Code to proceed:*",
             parse_mode='Markdown'
@@ -161,6 +164,30 @@ async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         await update.message.reply_text("❌ Unauthorized. Only the owner can generate codes.")
 
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner command to broadcast a message to all visitors."""
+    username = update.effective_user.username
+    if not (username and f"@{username}" == OWNER_USERNAME):
+        return await update.message.reply_text("❌ Unauthorized.")
+
+    if not context.args:
+        return await update.message.reply_text("Usage: `/broadcast Your message here`", parse_mode='Markdown')
+
+    message = " ".join(context.args)
+    users = get_all_users()
+    count = 0
+    
+    await update.message.reply_text(f"🚀 Starting broadcast to {len(users)} users...")
+    
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=f"📢 *Eaglens Broadcast*\n\n{message}", parse_mode='Markdown')
+            count += 1
+        except Exception as e:
+            logging.error(f"Failed to send broadcast to {user_id}: {e}")
+    
+    await update.message.reply_text(f"✅ Broadcast complete. Sent to {count}/{len(users)} users.")
+
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle main menu interactions with access check."""
     user_id = update.effective_user.id
@@ -199,6 +226,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('verify', verify_payment))
     application.add_handler(CommandHandler('gen_code', generate_code_command))
+    application.add_handler(CommandHandler('broadcast', broadcast_command))
     application.add_handler(CallbackQueryHandler(handle_payment_callback, pattern='^pay_'))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_invite))
     application.run_polling()
