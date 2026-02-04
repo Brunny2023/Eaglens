@@ -1,7 +1,7 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
-from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
+from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_QUARTERLY_PRICE, PAYSTACK_MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
 from engine import EaglensEngine
 from database import check_user_access, verify_invite_code, init_db, log_visitor, get_all_users
 from payments import PaystackManager
@@ -24,7 +24,7 @@ DISCLAIMER_TEXT = (
     "💰 *Rain Dollars with Guided Predictions:*\n"
     "Stop guessing and start winning. Our system is engineered to help you make "
     "decisions that **rain dollars**. Let Eaglens guide your path to profitability today!\n\n"
-    "⚠️ *Access Restricted*: Eaglens is currently **Invite-Only**."
+    "⚠️ *Access Restricted*: Eaglens is **Invite-Only**."
 )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -42,6 +42,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     has_access, status = check_user_access(user_id)
     
+    # If user is already verified but not subscribed, skip invite and go to payment
+    if status in ["not_subscribed", "expired"]:
+        await show_payment_options(update, context)
+        return
+
     if status in ["not_registered", "not_verified"]:
         await update.message.reply_text(
             DISCLAIMER_TEXT + "\n\n*Please enter your Invite Code to proceed:*",
@@ -50,18 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['awaiting_invite'] = True
         return
 
-    if status in ["not_subscribed", "expired"]:
-        keyboard = [
-            [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
-            [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "🦅 *Subscription Required*\n\nTo access Eaglens predictions and start raining dollars, please select a plan:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        return
+
 
     # Active user menu
     keyboard = [['🔍 Search Match', '📅 Today\'s Analysis'], ['📈 System Status', 'ℹ️ About Eaglens']]
@@ -71,6 +65,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+
+async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Helper to show payment options to verified users."""
+    keyboard = [
+        [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
+        [InlineKeyboardButton(f"3-Month Trial (${PAYSTACK_QUARTERLY_PRICE})", callback_data='pay_quarterly')],
+        [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = "🦅 *Subscription Required*\n\nTo access Eaglens predictions and start raining dollars, please select a plan:"
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def handle_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verify the invite code provided by the user."""
@@ -86,13 +95,7 @@ async def handle_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✅ *Invite Verified!*\n\nWelcome to the elite circle. Now, choose your entry plan to start receiving predictions:",
             parse_mode='Markdown'
         )
-        # Show payment options
-        keyboard = [
-            [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
-            [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Select a plan:", reply_markup=reply_markup)
+        await show_payment_options(update, context)
     else:
         await update.message.reply_text("❌ *Invalid or used invite code.* Please try again or contact support.")
 
@@ -102,7 +105,13 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     
     plan = query.data.split('_')[1]
-    amount = PAYSTACK_TRIAL_PRICE if plan == 'trial' else PAYSTACK_MONTHLY_PRICE
+    if plan == 'trial':
+        amount = PAYSTACK_TRIAL_PRICE
+    elif plan == 'quarterly':
+        amount = PAYSTACK_QUARTERLY_PRICE
+    else:
+        amount = PAYSTACK_MONTHLY_PRICE
+        
     user_id = query.from_user.id
     email = f"user_{user_id}@eaglens.bot" # Placeholder email
     

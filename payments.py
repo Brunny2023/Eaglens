@@ -40,8 +40,17 @@ class PaystackManager:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        expiry_date = (datetime.now() + timedelta(days=30)).isoformat()
-        trial_used = 1 if plan_type == "trial" else 0
+        if plan_type == "trial":
+            days = 30
+            trial_used = 1
+        elif plan_type == "quarterly":
+            days = 90
+            trial_used = 1
+        else:
+            days = 30
+            trial_used = 0
+            
+        expiry_date = (datetime.now() + timedelta(days=days)).isoformat()
         
         cursor.execute('''
             UPDATE users 
