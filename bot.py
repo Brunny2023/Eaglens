@@ -132,7 +132,8 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
         )
         context.user_data['last_ref'] = ref
     else:
-        await query.edit_message_text("❌ Error initializing payment. Please try again later.")
+        error_msg = res.get('message', 'Unknown error')
+        await query.edit_message_text(f"❌ Error initializing payment: {error_msg}\n\nPlease ensure your Paystack Secret Key is correctly configured in GitHub Secrets.")
 
 async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manually verify payment using the reference."""

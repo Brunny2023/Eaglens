@@ -1,5 +1,6 @@
 import requests
 import sqlite3
+import logging
 from datetime import datetime, timedelta
 from config import PAYSTACK_SECRET_KEY, DB_PATH
 
@@ -24,8 +25,16 @@ class PaystackManager:
             "metadata": metadata
         }
         
-        response = requests.post(url, headers=PaystackManager.HEADERS, json=data)
-        return response.json()
+        logging.info(f"Initializing Paystack transaction for {email} with amount {amount}")
+        try:
+            response = requests.post(url, headers=PaystackManager.HEADERS, json=data)
+            res_json = response.json()
+            if not res_json.get('status'):
+                logging.error(f"Paystack Error: {res_json.get('message')}")
+            return res_json
+        except Exception as e:
+            logging.error(f"Request Exception: {e}")
+            return {"status": False, "message": str(e)}
 
     @staticmethod
     def verify_transaction(reference):
