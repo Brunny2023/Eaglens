@@ -22,12 +22,12 @@ CONFIDENCE_LOW = (0, 44)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "eaglens.db")
 
-# Paystack Configuration
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "YOUR_PAYSTACK_SECRET_KEY")
-PAYSTACK_TRIAL_PRICE = 7.99
-PAYSTACK_QUARTERLY_PRICE = 19.99
-PAYSTACK_MONTHLY_PRICE = 349.00
-PAYSTACK_CURRENCY = "USD"
+# Payment Configuration (Switching to Flutterwave)
+FLW_SECRET_KEY = os.getenv("FLW_SECRET_KEY", "YOUR_FLW_SECRET_KEY")
+TRIAL_PRICE = 7.99
+QUARTERLY_PRICE = 19.99
+MONTHLY_PRICE = 349.00
+CURRENCY = "USD"
 
 # Owner Configuration
 OWNER_USERNAME = "@lordsgreat"

@@ -1,10 +1,10 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
-from config import TELEGRAM_TOKEN, PAYSTACK_TRIAL_PRICE, PAYSTACK_QUARTERLY_PRICE, PAYSTACK_MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
+from config import TELEGRAM_TOKEN, TRIAL_PRICE, QUARTERLY_PRICE, MONTHLY_PRICE, OWNER_USERNAME, OWNER_ID
 from engine import EaglensEngine
 from database import check_user_access, verify_invite_code, init_db, log_visitor, get_all_users
-from payments import PaystackManager
+from payments import PaymentManager
 from invites import generate_invite_code, notify_owner_of_new_code
 
 # Configure logging
@@ -69,9 +69,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Helper to show payment options to verified users."""
     keyboard = [
-        [InlineKeyboardButton(f"1-Month Trial (${PAYSTACK_TRIAL_PRICE})", callback_data='pay_trial')],
-        [InlineKeyboardButton(f"3-Month Trial (${PAYSTACK_QUARTERLY_PRICE})", callback_data='pay_quarterly')],
-        [InlineKeyboardButton(f"Monthly Subscription (${PAYSTACK_MONTHLY_PRICE})", callback_data='pay_monthly')]
+        [InlineKeyboardButton(f"1-Month Trial (${TRIAL_PRICE})", callback_data='pay_trial')],
+        [InlineKeyboardButton(f"3-Month Trial (${QUARTERLY_PRICE})", callback_data='pay_quarterly')],
+        [InlineKeyboardButton(f"Monthly Subscription (${MONTHLY_PRICE})", callback_data='pay_monthly')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -100,25 +100,25 @@ async def handle_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ *Invalid or used invite code.* Please try again or contact support.")
 
 async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle plan selection and initialize Paystack transaction."""
+    """Handle plan selection and initialize Flutterwave transaction."""
     query = update.callback_query
     await query.answer()
     
     plan = query.data.split('_')[1]
     if plan == 'trial':
-        amount = PAYSTACK_TRIAL_PRICE
+        amount = TRIAL_PRICE
     elif plan == 'quarterly':
-        amount = PAYSTACK_QUARTERLY_PRICE
+        amount = QUARTERLY_PRICE
     else:
-        amount = PAYSTACK_MONTHLY_PRICE
+        amount = MONTHLY_PRICE
         
     user_id = query.from_user.id
-    email = f"user_{user_id}@eaglens.bot" # Placeholder email
+    email = f"user_{user_id}@eaglens.bot"
     
-    res = PaystackManager.initialize_transaction(email, amount, {"user_id": user_id, "plan": plan})
+    res = PaymentManager.initialize_transaction(email, amount, {"user_id": user_id, "plan": plan})
     
     if res.get('status'):
-        auth_url = res['data']['authorization_url']
+        auth_url = res['data']['link']
         ref = res['data']['reference']
         
         keyboard = [[InlineKeyboardButton("💳 Pay Now", url=auth_url)]]
@@ -126,26 +126,28 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
         
         await query.edit_message_text(
             f"🦅 *Payment Initialized*\n\nPlan: {plan.capitalize()}\nAmount: ${amount}\n\n"
-            "Click the button below to complete your payment. Once done, use /verify to activate your account.",
+            "Click the button below to complete your payment. Once done, use `/verify [transaction_id]` to activate your account.\n\n"
+            "💡 *Note*: You will find your Transaction ID in the payment confirmation email or on the success page.",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
         context.user_data['last_ref'] = ref
     else:
         error_msg = res.get('message', 'Unknown error')
-        await query.edit_message_text(f"❌ Error initializing payment: {error_msg}\n\nPlease ensure your Paystack Secret Key is correctly configured in GitHub Secrets.")
+        await query.edit_message_text(f"❌ Error initializing payment: {error_msg}\n\nPlease ensure your Flutterwave Secret Key is correctly configured in GitHub Secrets.")
 
 async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manually verify payment using the reference."""
-    ref = context.user_data.get('last_ref')
-    if not ref:
-        return await update.message.reply_text("No pending payment found. Use /start to subscribe.")
+    """Manually verify payment using the Flutterwave transaction ID."""
+    if not context.args:
+        return await update.message.reply_text("Usage: `/verify [transaction_id]`\n\nYou can find your Transaction ID on the payment success page.")
+
+    transaction_id = context.args[0]
+    res = PaymentManager.verify_transaction(transaction_id)
     
-    res = PaystackManager.verify_transaction(ref)
-    if res.get('status') and res['data']['status'] == 'success':
+    if res.get('status') == 'success' and res['data']['status'] == 'successful':
         user_id = update.effective_user.id
-        plan = res['data']['metadata']['plan']
-        expiry = PaystackManager.activate_subscription(user_id, plan)
+        plan = res['data']['meta']['plan']
+        expiry = PaymentManager.activate_subscription(user_id, plan)
         
         await update.message.reply_text(
             f"🎉 *Payment Successful!*\n\nYour Eaglens access is now **Active** until {expiry[:10]}.\n"
@@ -153,7 +155,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text("⏳ Payment not yet verified. Please complete the payment or try again in a moment.")
+        await update.message.reply_text("❌ Payment verification failed. Please ensure you entered the correct Transaction ID.")
 
 async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Owner command to generate a new multi-use invite code."""
