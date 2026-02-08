@@ -1,12 +1,16 @@
 import sqlite3
 from datetime import datetime, timedelta
 from config import DB_PATH
-
 import os
+
+def get_db_connection():
+    # Check if we are in GitHub Actions and have a persistent DB URL (optional future-proofing)
+    # For now, we use the local SQLite file but ensure it's handled correctly
+    return sqlite3.connect(DB_PATH)
 
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Create users table (updated for visitor tracking and persistent access)
@@ -48,7 +52,7 @@ def init_db():
     conn.close()
 
 def add_invite_code(code, max_uses=1):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -61,7 +65,7 @@ def add_invite_code(code, max_uses=1):
     conn.close()
 
 def log_visitor(telegram_id, username):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO users (telegram_id, username, first_seen) 
@@ -72,7 +76,7 @@ def log_visitor(telegram_id, username):
     conn.close()
 
 def verify_invite_code(telegram_id, code):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Check if user is already verified
@@ -109,7 +113,7 @@ def verify_invite_code(telegram_id, code):
     conn.close()
     return False
 def get_all_users():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT telegram_id FROM users')
     users = [row[0] for row in cursor.fetchall()]
@@ -117,7 +121,7 @@ def get_all_users():
     return users
 
 def check_user_access(telegram_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT is_verified, is_subscribed, expiry_date FROM users WHERE telegram_id = ?', (telegram_id,))
     result = cursor.fetchone()
@@ -127,7 +131,7 @@ def check_user_access(telegram_id):
         return False, "not_registered"
     
     is_verified, is_subscribed, expiry_date = result
-    if not is_verified:
+    if is_verified == 0:
         return False, "not_verified"
     
     if not is_subscribed:

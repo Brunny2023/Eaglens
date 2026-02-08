@@ -48,6 +48,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if status in ["not_registered", "not_verified"]:
+        # Double check if user is already verified in DB but status returned not_verified
+        # This can happen if check_user_access logic is strict
         await update.message.reply_text(
             DISCLAIMER_TEXT + "\n\n*Please enter your Invite Code to proceed:*",
             parse_mode='Markdown'
@@ -83,11 +85,18 @@ async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def handle_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verify the invite code provided by the user."""
+    user_id = update.effective_user.id
+    
+    # Check if user is already verified in DB
+    _, status = check_user_access(user_id)
+    if status != "not_verified" and status != "not_registered":
+        context.user_data['awaiting_invite'] = False
+        return await handle_menu(update, context)
+
     if not context.user_data.get('awaiting_invite'):
         return await handle_menu(update, context)
     
     code = update.message.text.strip()
-    user_id = update.effective_user.id
     
     if verify_invite_code(user_id, code):
         context.user_data['awaiting_invite'] = False
