@@ -23,7 +23,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "eaglens.db")
 
 # Payment Configuration (Switching to Flutterwave)
-FLW_SECRET_KEY = os.getenv("FLW_SECRET_KEY", "YOUR_FLW_SECRET_KEY")
+FLW_SECRET_KEY = os.getenv("FLW_SECRET_KEY")
+FLW_CLIENT_ID = os.getenv("FLW_CLIENT_ID")
 TRIAL_PRICE = 7.99
 QUARTERLY_PRICE = 19.99
 MONTHLY_PRICE = 349.00

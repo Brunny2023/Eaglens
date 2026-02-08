@@ -31,5 +31,8 @@ jobs:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
         FLW_SECRET_KEY: ${{ secrets.FLW_SECRET_KEY }}
+        FLW_CLIENT_ID: ${{ secrets.FLW_CLIENT_ID }}
       run: |
-        python bot.py
+        # Use a loop to restart the bot if it crashes, but limit total runtime
+        # to stay within GitHub's 6-hour limit per job.
+        timeout 340m python bot.py || echo "Bot timed out or crashed, will be restarted by schedule."

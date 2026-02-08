@@ -3,14 +3,20 @@ import sqlite3
 import logging
 import uuid
 from datetime import datetime, timedelta
-from config import FLW_SECRET_KEY, DB_PATH, CURRENCY
+from config import FLW_SECRET_KEY, FLW_CLIENT_ID, DB_PATH, CURRENCY
 
 class PaymentManager:
     BASE_URL = "https://api.flutterwave.com/v3"
-    HEADERS = {
-        "Authorization": f"Bearer {FLW_SECRET_KEY}",
-        "Content-Type": "application/json"
-    }
+    
+    @staticmethod
+    def get_headers():
+        headers = {
+            "Authorization": f"Bearer {FLW_SECRET_KEY}",
+            "Content-Type": "application/json"
+        }
+        if FLW_CLIENT_ID:
+            headers["X-Client-Id"] = FLW_CLIENT_ID
+        return headers
 
     @staticmethod
     def initialize_transaction(email, amount, metadata):
@@ -36,7 +42,7 @@ class PaymentManager:
         
         logging.info(f"Initializing Flutterwave transaction for {email} with amount {amount}")
         try:
-            response = requests.post(url, headers=PaymentManager.HEADERS, json=data)
+            response = requests.post(url, headers=PaymentManager.get_headers(), json=data)
             res_json = response.json()
             if res_json.get('status') == 'success':
                 # Add tx_ref to response for verification later
@@ -52,11 +58,9 @@ class PaymentManager:
     @staticmethod
     def verify_transaction(transaction_id):
         """Verify a transaction with Flutterwave using the transaction ID."""
-        # Note: Flutterwave verification usually uses the transaction ID returned in the redirect URL
-        # or you can search by tx_ref. For simplicity in Telegram, we'll ask for the ID or check latest.
         url = f"{PaymentManager.BASE_URL}/transactions/{transaction_id}/verify"
         try:
-            response = requests.get(url, headers=PaymentManager.HEADERS)
+            response = requests.get(url, headers=PaymentManager.get_headers())
             return response.json()
         except Exception as e:
             logging.error(f"Verification Exception: {e}")
